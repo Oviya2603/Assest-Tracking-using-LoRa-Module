@@ -1,0 +1,505 @@
+1.1LoRa Transmitter (Arduino with LoRa module) 
+cpp 
+#include <SPI.h> 
+#include <LoRa.h> 
+#include <TinyGPS++.h> 
+#include <SoftwareSerial.h> 
+// GPS pins 
+int RXPin = 3; 
+int TXPin = 4; 
+TinyGPSPlus gps; 
+SoftwareSerial gpsSerial(RXPin, TXPin); 
+void setup() 
+ { 
+  Serial.begin(9600); 
+  gpsSerial.begin(9600);  
+  // Initialize LoRa on frequency 433 MHz 
+  if (!LoRa.begin(433E6))  
+{ 
+    Serial.println("Starting LoRa failed!"); 
+    while (1); 
+  } 
+  Serial.println("LoRa Transmitter Initialized"); 
+} 
+void loop()   
+ 
+{ 
+  while (gpsSerial.available() > 0)  
+{ 
+    if (gps.encode(gpsSerial.read())) { 
+      if (gps.location.isValid()) { 
+        // Transmit GPS coordinates 
+        LoRa.beginPacket(); 
+        LoRa.print("Lat: "); 
+        LoRa.print(gps.location.lat(), 6); 
+        LoRa.print(", Long: "); 
+        LoRa.print(gps.location.lng(), 6); 
+        LoRa.endPacket(); 
+        Serial.println("Sent via LoRa"); 
+        Serial.print("Lat: "); 
+        Serial.print(gps.location.lat(), 6); 
+        Serial.print(" Long: "); 
+        Serial.println(gps.location.lng(), 6); 
+      } 
+} 
+  } 
+  delay(1000);  
+// delay to avoid spamming 
+} 
+ 
+1.2 LoRa Receiver (Arduino with LoRa and LCD) 
+cpp 
+#include <SPI.h> 
+#include <LoRa.h> 
+#include <LiquidCrystal.h> 
+// Define LCD pin connections 
+const int rs = 8, en = 7, d4 = 6, d5 = 5, d6 = 4, d7 = 3; 
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7); 
+void setup() { 
+  Serial.begin(9600);  
+  // Initialize LCD 
+  lcd.begin(16, 2); 
+  lcd.print("LoRa Receiver"); 
+  delay(2000); 
+  // Initialize LoRa 
+  if (!LoRa.begin(433E6)) { 
+    Serial.println("Starting LoRa failed!"); 
+    lcd.clear(); 
+    lcd.print("LoRa Failed"); 
+    while (1); 
+  } 
+  lcd.clear(); 
+} 
+void loop() { 
+  int packetSize = LoRa.parsePacket(); 
+  if (packetSize) { 
+    lcd.clear(); 
+    String incoming = ""; 
+    while (LoRa.available()) { 
+      incoming += (char)LoRa.read(); 
+    }  
+    lcd.print(incoming);  // Display the received data on LCD 
+    Serial.print("Received packet: "); 
+    Serial.println(incoming); // Also print to Serial for debugging 
+  } 
+} 
+1.3 Firebase Integration  
+For storing user details in Firebase,  to use a backend server.  
+1. Install Firebase Admin SDK: 
+   bash 
+   pip install firebase-admin 
+2. Python Code to Update Firebase: 
+   import firebase_admin 
+   from firebase_admin import credentials, firebase 
+   # Initialize Firebase Admin SDK 
+   cred = credentials.Certificate("path_to_serviceAccountKey.json") 
+   firebase_admin.initialize_app(cred) 
+   # Firebase database 
+   db = firebase.client() 
+   def update_asset_location(asset_id, latitude, longitude): 
+
+       data = { 
+           'latitude': latitude, 
+           'longitude': longitude, 
+           'timestamp': firestore.SERVER_TIMESTAMP 
+       } 
+       db.collection('assets').document(asset_id).set(data) 
+       print(f"Updated location for asset {asset_id}") 
+   # Example usage 
+   update_asset_location("asset_123", 12.9716, 77.5946)  
+ # Example lat, long 
+1.4 Backend 
+Navigate to the backend directory: 
+bash 
+cd backend 
+1. package.json (Backend) 
+{ 
+  "name": "asset-tracker-backend", 
+  "version": "1.0.0", 
+  "dependencies": { 
+    "express": "^4.17.1", 
+    "cors": "^2.8.5", 
+    "firebase-admin": "^9.8.0" 
+  }, 
+  "scripts": 
+ { 
+
+    "start": "node server.js" 
+  } 
+} 
+2. server.js 
+const express = require('express'); 
+const cors = require('cors'); 
+const firebaseAdmin = require('firebase-admin'); 
+const app = express(); 
+app.use(cors()); 
+app.use(express.json()); 
+// Initialize Firebase Admin 
+firebaseAdmin.initializeApp({ 
+  credential: firebaseAdmin.credential.cert('asset-tracker-firebase-adminsdk.json'), 
+  databaseURL: 'https://your-firebase-db-url' 
+}); 
+const db = firebaseAdmin.firestore(); 
+// Simulated asset data with changing location and status 
+let assetData = 
+ { 
+  deviceId: "Asset123", 
+  latitude: 37.7749, 
+  longitude: -122.4194, 
+  status: "active" 
+}; 
+// Update asset location and status every 5 seconds (simulation) 
+
+setInterval(() =>  
+{ 
+  assetData.latitude += (Math.random() - 0.5) * 0.01;  // Simulating small location changes 
+  assetData.longitude += (Math.random() - 0.5) * 0.01; 
+  assetData.status = Math.random() > 0.7 ? "inactive" : "active";  // Randomly set status to 'inactive' 
+}, 5000); 
+// API to get asset location and status 
+app.get('/api/assets', (req, res) =>  
+{ 
+  res.json(assetData); 
+}); 
+// API to simulate alert or status change 
+app.post('/api/send-alert', (req, res) =>  
+{ 
+  const { latitude, longitude, status } = req.body; 
+  assetData = { ...assetData, latitude, longitude, status }; 
+  res.send('Alert received and status updated!'); 
+}); 
+// Start the server 
+app.listen(3001, () =>  
+{ 
+  console.log('Backend server is running on port 3001'); 
+}); 
+ 
+
+ 3. Firebase Admin SDK (asset-tracker-firebase-adminsdk.json) 
+         This file can be generated by following Firebase setup instructions for admin SDK integration. 
+Replace "https://your-firebase-db-url" with your actual Firebase database URL. 
+ Install Backend Dependencies: 
+bash 
+npm install 
+To start the backend server: 
+bash 
+npm start 
+1.5 Frontend Module  
+Navigate to the frontend directory: 
+bash 
+cd ../frontend 
+1. package.json  
+{ 
+  "name": "asset-tracker-frontend", 
+  "version": "1.0.0", 
+  "dependencies": { 
+    "react": "^17.0.2", 
+    "react-dom": "^17.0.2", 
+    "react-scripts": "^4.0.3", 
+    "react-leaflet": "^3.2.0", 
+    "leaflet": "^1.7.1" 
+  }, 
+  "scripts": { 
+    "start": "react-scripts start", 
+    "build": "react-scripts build", 
+    "test": "react-scripts test", 
+    "eject": "react-scripts eject" 
+  } 
+} 
+ Install Frontend Dependencies: 
+bash 
+npm install 
+2.index.html (Inside public/) 
+<!DOCTYPE html> 
+<html lang="en"> 
+<head> 
+  <meta charset="UTF-8"> 
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+  <title>Asset Tracker</title> 
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" /> 
+</head> 
+<body> 
+  <div id="root"></div> 
+</body> 
+</html> 
+ 
+3. App.js (Main Component) 
+import React, { useState, useEffect } from 'react'; 
+import { MapContainer, TileLayer, Marker } from 'react-leaflet'; 
+import L from 'leaflet'; 
+import 'leaflet/dist/leaflet.css'; 
+import AlertBox from './AlertBox'; 
+const defaultPosition = [37.7749, -122.4194];  // Default asset position 
+// Custom marker icon for Leaflet 
+const markerIcon = new L.Icon({ 
+  iconUrl: require('leaflet/dist/images/marker-icon.png'), 
+  iconSize: [25, 41], 
+  iconAnchor: [12, 41] 
+}); 
+function App() { 
+  const [asset, setAsset] = useState({ latitude: 37.7749, longitude: -122.4194, status: 'active' }); 
+  const [alert, setAlert] = useState(null); 
+  // Fetch asset data from the backend 
+  useEffect(() => { 
+    const interval = setInterval(() => { 
+      fetch('http://localhost:3001/api/assets') 
+        .then(response => response.json()) 
+        .then(data => { 
+          setAsset(data); 
+          if (data.status === 'inactive') { 
+            setAlert('ALERT: Asset is inactive!'); 
+
+ 
+          } else  
+     { 
+            setAlert(null); 
+          } 
+        }) 
+        .catch(error => console.error('Error fetching data:', error)); 
+    }, 3000);  // Poll every 3 seconds 
+    return () => clearInterval(interval); 
+  }, []); 
+  return ( 
+    <div> 
+      <h1>Asset Tracker</h1> 
+      {alert && <AlertBox message={alert} />} 
+      <MapContainer center={[asset.latitude, asset.longitude]} zoom={13} style={{ height: "400px", 
+width: "100%" }}> 
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" /> 
+        <Marker position={[asset.latitude, asset.longitude]} icon={markerIcon} /> 
+      </MapContainer> 
+    </div> 
+  ); 
+} 
+export default App; 
+ 
+4. AlertBox.js (Component for Alerts) 
+import React from 'react'; 
+// UI for displaying alert messages 
+function AlertBox({ message }) 
+ { 
+  return ( 
+    <div style= 
+{ 
+{ 
+      backgroundColor: '#ff4d4d', 
+      color: 'white', 
+      padding: '10px', 
+      textAlign: 'center', 
+      marginBottom: '10px', 
+     marginBottom: '10px', 
+     textSize: 24dsp 
+    } 
+}> 
+      {message} 
+    </div> 
+  ); 
+} 
+export default AlertBox; 
+ 
+5. index.js (Render the App Component) 
+import React from 'react'; 
+import ReactDOM from 'react-dom'; 
+import './index.css';  // Add custom styles if needed 
+import App from './App'; 
+ReactDOM.render( 
+  <React.StrictMode> 
+    <App /> 
+  </React.StrictMode>, 
+  document.getElementById('root') 
+); 
+Install Frontend Dependencies: 
+bash 
+npm install 
+Step 3: Start the Web Application 
+ Start the Frontend: 
+bash 
+npm start  
+ 
+1.6 Arduino Code 
+cpp 
+#include <SPI.h> 
+#include <LoRa.h> 
+#include <TinyGPS++.h> 
+#include <WiFi.h> 
+#include <HTTPClient.h> 
+#include <TimeLib.h> 
+TinyGPSPlus gps; 
+HardwareSerial mySerial(1); 
+#define LORA_FREQUENCY 915E6 
+#define ASSET_ID "A12345" 
+const char* slackWebhookUrl = 
+"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXX
+ X"; 
+const int DAILY_USAGE_LIMIT_HOURS = 6; 
+unsigned long currentUsageTime = 0; 
+unsigned long lastUsageTimeUpdate = 0; 
+time_t lastResetTime; 
+double lastLatitude = 13.0827; 
+double lastLongitude = 80.2707; 
+double geofenceLatitude = 13.0827; 
+double geofenceLongitude = 80.2707; 
+double geofenceRadius = 0.5; 
+void setup() { 
+  Serial.begin(9600); 
+
+  mySerial.begin(9600); 
+  LoRa.begin(LORA_FREQUENCY); 
+  WiFi.begin("your_SSID", "your_PASSWORD"); 
+  while (WiFi.status() != WL_CONNECTED) { 
+    delay(1000); 
+  } 
+  lastResetTime = now(); 
+} 
+void loop() { 
+  while (mySerial.available() > 0) { 
+    gps.encode(mySerial.read()); 
+    if (gps.location.isUpdated()) { 
+      double currentLatitude = gps.location.lat(); 
+      double currentLongitude = gps.location.lng(); 
+      if (currentLatitude != lastLatitude || currentLongitude != lastLongitude) { 
+        String locationData = "Asset ID: " + String(ASSET_ID) + ", Location Changed: "; 
+        locationData += "Lat: " + String(currentLatitude, 6); 
+        locationData += ", Lon: " + String(currentLongitude, 6); 
+        sendSlackNotification("Location updated for Asset ID: " + String(ASSET_ID) + "\n" + 
+locationData); 
+        if (!isWithinGeofence(currentLatitude, currentLongitude)) { 
+          sendSlackNotification("Asset ID: " + String(ASSET_ID) + " has exited the geofenced area."); 
+        } 
+        lastLatitude = currentLatitude; 
+        lastLongitude = currentLongitude; 
+      } 
+
+      unsigned long currentMillis = millis(); 
+      if (currentMillis - lastUsageTimeUpdate >= 3600000) { 
+        currentUsageTime += 1; 
+        lastUsageTimeUpdate = currentMillis; 
+      } 
+      if (now() - lastResetTime >= 86400) { 
+        currentUsageTime = 0; 
+        lastResetTime = now(); 
+      } 
+      if (currentUsageTime >= DAILY_USAGE_LIMIT_HOURS) { 
+        sendSlackNotification("Over-usage alert: Asset ID " + String(ASSET_ID) + " exceeded daily 
+limit of 6 hours."); 
+      } 
+      String dataToSend = "Asset ID: " + String(ASSET_ID) + ", Lat: " + String(currentLatitude, 6) + 
+", Lon: " + String(currentLongitude, 6); 
+      LoRa.beginPacket(); 
+      LoRa.print(dataToSend); 
+      LoRa.endPacket(); 
+      delay(5000); 
+    } 
+ } 
+} 
+bool isWithinGeofence(double lat, double lon) { 
+  double distance = sqrt(pow(lat - geofenceLatitude, 2) + pow(lon - geofenceLongitude, 2)) * 111; 
+  return distance <= geofenceRadius; 
+} 
+ 
+void sendSlackNotification(String message) { 
+  if (WiFi.status() == WL_CONNECTED) { 
+    HTTPClient http; 
+    http.begin(slackWebhookUrl); 
+    http.addHeader("Content-Type", "application/json"); 
+    String jsonMessage = "{\"text\": \"" + message + "\"}"; 
+    http.POST(jsonMessage); 
+    http.end(); 
+  } 
+} 
+Node.js Backend Code 
+const express = require('express'); 
+const admin = require('firebase-admin'); 
+const bodyParser = require('body-parser'); 
+const serviceAccount = require('./path/to/your/serviceAccountKey.json'); 
+admin.initializeApp({ 
+  credential: admin.credential.cert(serviceAccount), 
+  databaseURL: "https://your-database-name.firebaseio.com" 
+}); 
+const app = express(); 
+app.use(bodyParser.json()); 
+app.post('/logUsage', (req, res) =>  
+{ 
+  const { assetId, usageTime, latitude, longitude } = req.body; 
+  const usageRef = admin.database().ref(`assets/${assetId}/usage`); 
+
+  usageRef.push({ usageTime, latitude, longitude, timestamp: Date.now() }) 
+    .then(() => res.status(200).send('Usage logged.')) 
+    .catch((error) => res.status(500).send(error)); 
+}); 
+app.post('/setGeofence', (req, res) => 
+ { 
+  const { assetId, geofence } = req.body; 
+  const geofenceRef = admin.database().ref(`assets/${assetId}/geofence`);  
+  geofenceRef.set(geofence) 
+    .then(() => res.status(200).send('Geofence set.')) 
+    .catch((error) => res.status(500).send(error)); 
+}); 
+app.listen(3000, () =>  
+{ 
+  console.log('Server running on port 3000'); 
+}); 
+ 
+ HTML  and JavaScript Web Interface 
+<!DOCTYPE html> 
+<html lang="en"> 
+<head> 
+    <meta charset="UTF-8"> 
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>Asset Tracking System</title> 
+</head> 
+
+ 
+<body> 
+    <h1>Asset Tracking System</h1> 
+    <form id="usageForm"> 
+        <input type="text" id="assetId" placeholder="Asset ID" value="A12345" required> 
+        <input type="number" id="usageTime" placeholder="Usage Time (Hours)" required value="1"> 
+        <input type="number" id="latitude" placeholder="Latitude" required value="13.0827"> 
+        <input type="number" id="longitude" placeholder="Longitude" required value="80.2707"> 
+        <button type="submit">Log Usage</button> 
+    </form> 
+    <form id="geofenceForm"> 
+        <input type="text" id="geofenceAssetId" placeholder="Asset ID" required value="A12345"> 
+        <input type="number" id="geofenceLatitude" placeholder="Geofence Latitude" required 
+value="13.0827"> 
+        <input type="number" id="geofenceLongitude" placeholder="Geofence Longitude" required 
+value="80.2707"> 
+        <input type="number" id="geofenceRadius" placeholder="Geofence Radius (km)" required 
+value="0.5"> 
+        <button type="submit">Set Geofence</button> 
+    </form> 
+    <script> 
+        document.getElementById('usageForm').onsubmit = async (e) => { 
+            e.preventDefault(); 
+            const assetId = document.getElementById('assetId').value; 
+            const usageTime = document.getElementById('usageTime').value; 
+            const latitude = document.getElementById('latitude').value; 
+            const longitude = document.getElementById('longitude').value; 
+            await fetch('http://localhost:3000/logUsage', { 
+
+ 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ assetId, usageTime, latitude, longitude }) 
+            }); 
+        }; 
+        document.getElementById('geofenceForm').onsubmit = async (e) => { 
+            e.preventDefault(); 
+            const assetId = document.getElementById('geofenceAssetId').value; 
+            const latitude = document.getElementById('geofenceLatitude').value; 
+            const longitude = document.getElementById('geofenceLongitude').value; 
+            const radius = document.getElementById('geofenceRadius').value; 
+            await fetch('http://localhost:3000/setGeofence', { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ assetId, geofence: { latitude, longitude, radius } }) 
+            }); 
+        }; 
+    </script> 
+</body> 
+</html> 
+ 
+ 
+  
+ 

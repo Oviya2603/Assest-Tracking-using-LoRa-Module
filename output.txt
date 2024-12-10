@@ -1,0 +1,4 @@
+Alert: Asset 12345 is being overused. 
+Details: Time since last usage: 5.00 hours 
+geofence Latitude = 13.0827 
+geofence Longitude = 80.2707 
